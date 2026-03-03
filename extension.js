@@ -968,8 +968,8 @@ class SettingsPanelProvider {
   <div class="row">
     <label for="lang">${t.language}</label>
     <select id="lang" onchange="update('aiUsage.language', this.value)">
-      <option value="ko" ${sel(cfg.language,'ko')}>한국어</option>
       <option value="en" ${sel(cfg.language,'en')}>English</option>
+      <option value="ko" ${sel(cfg.language,'ko')}>한국어</option>
       <option value="ja" ${sel(cfg.language,'ja')}>日本語</option>
       <option value="zh-cn" ${sel(cfg.language,'zh-cn')}>中文(简体)</option>
       <option value="zh-tw" ${sel(cfg.language,'zh-tw')}>中文(繁體)</option>
