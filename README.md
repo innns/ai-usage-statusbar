@@ -2,6 +2,16 @@
 
 A VS Code extension that shows usage status for `Codex`, `Claude`, `Copilot`, and `Gemini` directly in the status bar, with a sidebar control panel.
 
+## Install
+
+Install from the VS Code Marketplace:
+- https://marketplace.visualstudio.com/items?itemName=duddudcns.codex-usage-statusbar
+
+Or in VS Code:
+1. Open Extensions (`Ctrl+Shift+X`)
+2. Search `AI Usage Status Bar`
+3. Click `Install`
+
 ## Features
 
 - 4 provider status items in the status bar:
@@ -111,12 +121,6 @@ npm install
 ```
 
 Open this folder in VS Code and press `F5` to launch the Extension Development Host.
-
-## Package
-
-```bash
-npx @vscode/vsce package
-```
 
 ## Security Notes
 
