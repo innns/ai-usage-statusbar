@@ -1,147 +1,129 @@
-# AI Usage Status Bar
+﻿# AI Usage Status Bar
 
-VS Code extension for showing Codex, Claude, Copilot, and Gemini usage in the
-status bar, with a sidebar settings panel.
+A VS Code extension that shows usage status for `Codex`, `Claude`, `Copilot`, and `Gemini` directly in the status bar, with a sidebar control panel.
 
-## What It Shows
+## Features
 
-- 4 status bar items: Codex, Claude, Copilot, Gemini
-- Usage summaries per provider (quota/limits)
-- Provider-specific details in tooltip
-- Gemini status bar summary includes 3 model groups: `Flash Lite`, `Flash`,
-  `Pro`
+- 4 provider status items in the status bar:
+  - Codex
+  - Claude
+  - Copilot
+  - Gemini
+- Sidebar panel (`AI Usage`) with:
+  - Full refresh
+  - Per-provider refresh
+  - Provider visibility toggles
+  - Gemini model-group toggles (`Pro`, `Flash`, `Flash Lite`)
+- Fixed auto-refresh every 60 seconds
+- Detailed diagnostics in the `AI Usage` output channel
 
 ## Data Sources
 
-- Codex:
-  - `codexUsage.source = auto` -> command first, then session log fallback
-  - `command` -> command only
-  - `sessionLog` -> newest `*.jsonl` in `codexUsage.sessionsRoot`
-- Claude:
-  - OAuth usage API from local credentials (`~/.claude/.credentials.json`)
-  - fallback to optional command
-  - fallback to local session rate-limit files (H/W only)
-- Copilot:
-  - GitHub auth session + Copilot API (`/copilot_internal/user`)
-  - fallback to optional command
-- Gemini:
-  - OAuth credentials from `~/.gemini/oauth_creds.json`
-  - refresh token flow (`oauth2.googleapis.com/token`)
-  - Code Assist quota APIs:
-    - `v1internal:loadCodeAssist`
-    - `v1internal:retrieveUserQuota`
+### Codex
 
-## Copilot Auth Flow
+- `codexUsage.source=auto`: command first, then session-log fallback
+- `codexUsage.source=command`: command only
+- `codexUsage.source=sessionLog`: newest `*.jsonl` from `codexUsage.sessionsRoot`
 
-- On refresh, the extension first checks GitHub auth session silently.
-- If no session exists, it requests GitHub sign-in once per VS Code session.
-- After the first prompt attempt, periodic auto-refresh does not repeatedly pop
-  up login UI.
-- Required GitHub scopes are `read:user` and `user:email`.
-- If login is cancelled or unavailable, Copilot shows unavailable and can still
-  fall back to `copilotUsage.command`.
+### Claude
 
-## UI Behavior
+Priority order:
+1. OAuth usage API (`~/.claude/.credentials.json`)
+2. Optional fallback command (`claudeUsage.command`)
+3. Local session rate-limit files (`claudeUsage.sessionsRoot`)
 
-- Status bar text is always shown in English.
-- Sidebar panel language is configurable via `aiUsage.language`.
-- First install language behavior:
-  - follows VS Code UI language
-  - unsupported locale -> English
-- Provider visibility toggles update display immediately without forcing a full
-  refresh.
-- If a `geminiUsage.*` setting write is rejected by VS Code, Gemini toggles are
-  still applied from extension fallback state (`globalState`) for immediate
-  statusbar consistency.
-- Panel keeps previous usage values until new data arrives (no "loading" reset
-  flicker).
-- Auto refresh is fixed to every 60 seconds and always enabled (not configurable
-  in panel/settings).
+Notes:
+- Transient OAuth failures can reuse the last successful snapshot.
+- In no-data scenarios, usage may be shown as `Full` by design.
+
+### Copilot
+
+Priority order:
+1. GitHub auth session + Copilot API
+2. Optional fallback command (`copilotUsage.command`)
+
+Auth behavior:
+- Silent session lookup first
+- If missing, one sign-in prompt per VS Code session
+- Required scopes: `read:user`, `user:email`
+
+### Gemini
+
+- OAuth creds: `~/.gemini/oauth_creds.json`
+- Token endpoint: `https://oauth2.googleapis.com/token`
+- Usage APIs:
+  - `v1internal:loadCodeAssist`
+  - `v1internal:retrieveUserQuota`
+
+Refresh client candidate order:
+1. `client_id/client_secret` in creds file
+2. Installed `@google/gemini-cli-core` oauth file
+3. Environment-variable defaults
+
+Supported environment variables:
+- `GEMINI_CLIENT_ID`
+- `GEMINI_CLIENT_SECRET`
+- `GEMINI_LEGACY_CLIENT_ID`
+- `GEMINI_LEGACY_CLIENT_SECRET`
 
 ## Commands
 
-- `Codex Usage: Refresh`
-- `Codex Usage: Refresh Gemini`
-- `Codex Usage: Open Output`
+Available in the Command Palette:
+- `Codex Usage: Refresh` (`codexUsage.refresh`)
+- `Codex Usage: Refresh Gemini` (`codexUsage.refreshGemini`)
+- `Codex Usage: Open Output` (`codexUsage.openOutput`)
+
+Status bar items also trigger provider-specific refresh on click.
 
 ## Settings
 
-- `aiUsage.language` (sidebar language only)
+- `aiUsage.language`
 - `codexUsage.enabled`
-- `claudeUsage.enabled`
-- `copilotUsage.enabled`
-- `geminiUsage.enabled`
-- `geminiUsage.showFlashLite`
-- `geminiUsage.showFlash`
-- `geminiUsage.showPro`
-- `codexUsage.source` (`auto` | `command` | `sessionLog`)
+- `codexUsage.source` (`auto | command | sessionLog`)
 - `codexUsage.command`
 - `codexUsage.commandTimeoutMs`
 - `codexUsage.sessionsRoot`
+- `claudeUsage.enabled`
 - `claudeUsage.sessionsRoot`
 - `claudeUsage.command`
 - `claudeUsage.commandTimeoutMs`
+- `copilotUsage.enabled`
 - `copilotUsage.command`
 - `copilotUsage.commandTimeoutMs`
+- `geminiUsage.enabled`
+- `geminiUsage.showPro`
+- `geminiUsage.showFlash`
+- `geminiUsage.showFlashLite`
+
+## UI and Behavior
+
+- Status bar text is always in English
+- Sidebar language is controlled by `aiUsage.language`
+- Supported panel languages:
+  - `ko`, `en`, `ja`, `zh-cn`, `zh-tw`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `tr`, `pl`, `nl`, `vi`, `id`
+- Auto-refresh interval is fixed at 60 seconds
+- If VS Code rejects writes for `geminiUsage.*`, extension fallback state is used to keep Gemini toggles applied immediately
 
 ## Local Development
 
-$11. Open this folder in VS Code.
-$11. Press `F5` to run Extension Development Host.
-$11. Run `Codex Usage: Refresh` from Command Palette.
+```bash
+npm install
+```
+
+Open this folder in VS Code and press `F5` to launch the Extension Development Host.
 
 ## Package
 
 ```bash
 npx @vscode/vsce package
-```text
+```
 
-## Version and Release Management
+## Security Notes
 
-- Current local release target: `0.0.36`
-- Publisher for local-managed installs: `local`
-- View title includes version on the same line: `AI Usage: Settings v<version>`.
-- Versioning policy: every code/document behavior change increments patch
-  version by `+0.0.1` (example: `0.0.9` -> `0.0.10`).
-- Documentation policy: every version bump must update change documents in the
-  same commit/release (`CHANGELOG.md` required, plus `README.md`/`CAUTIONS.md`
-  when release/process guidance changed).
-- Localization policy: every new/changed user-facing text must be added for all
-  supported languages in `I18N` (no English-only hardcoded UI text).
-- Recurrence-prevention notes are tracked in `CAUTIONS.md`.
+- Do not hardcode OAuth client IDs/secrets in source code.
+- Use environment variables or local credential files.
+- Before pushing, verify changed files/logs do not include secrets.
 
-### Local Release Checklist
+## License
 
-$11. Update `package.json` `version`.
-$11. Keep `package.json` `publisher` as `local`.
-$11. Build VSIX:
-
-   ```bash
-   npx @vscode/vsce package
-   ```text
-
-$11. Install/update in VS Code:
-
-   ```bash
-   code --install-extension .\\codex-usage-statusbar-<version>.vsix --force
-   ```text
-
-$11. Verify:
-
-   ```bash
-   code --list-extensions --show-versions | rg codex-usage-statusbar
-   ```text
-
-   - Expected managed entry: `local.codex-usage-statusbar@<version>`
-
-$11. Append detailed release notes to `CHANGELOG.md` for that version.
-$11. If release/process guidance changed, update `README.md` and `CAUTIONS.md`
-   together in the same version.
-
-### Duplicate Install Note
-
-- If both `local.codex-usage-statusbar` and another publisher entry are
-  installed, keep `local` and remove the other one.
-- If old local folders remain under `.vscode/extensions`, remove outdated
-  version folders and keep only the latest
-  `local.codex-usage-statusbar-<version>`.
+[MIT](./LICENSE)
