@@ -1,0 +1,160 @@
+{
+  "name": "codex-usage-statusbar",
+  "displayName": "AI Usage Status Bar",
+  "description": "Show Codex, Claude, Copilot, and Gemini usage in the status bar with a sidebar control panel.",
+  "version": "0.0.36",
+  "publisher": "local",
+  "icon": "ai_usage_statusbar.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiUsageSidebar",
+          "title": "AI Usage",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiUsageSidebar": [
+        {
+          "type": "webview",
+          "id": "aiUsage.settingsPanel",
+          "name": "Settings v0.0.36"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codexUsage.refresh",
+        "title": "Codex Usage: Refresh"
+      },
+      {
+        "command": "codexUsage.openOutput",
+        "title": "Codex Usage: Open Output"
+      },
+      {
+        "command": "codexUsage.refreshGemini",
+        "title": "Codex Usage: Refresh Gemini"
+      }
+    ],
+    "configuration": {
+      "title": "Codex Usage Status Bar",
+      "properties": {
+        "aiUsage.language": {
+          "type": "string",
+          "default": "en",
+          "enum": ["ko","en","ja","zh-cn","zh-tw","fr","de","es","pt","ru","it","tr","pl","nl","vi","id"],
+          "enumDescriptions": [
+            "한국어","English","日本語","中文(简体)","中文(繁體)",
+            "Français","Deutsch","Español","Português","Русский",
+            "Italiano","Türkçe","Polski","Nederlands","Tiếng Việt","Bahasa Indonesia"
+          ],
+          "description": "Language for the sidebar panel only. On first install, VS Code UI language is used; unsupported locales fallback to English."
+        },
+        "codexUsage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Codex usage in the status bar."
+        },
+        "codexUsage.command": {
+          "type": "string",
+          "default": "codex usage",
+          "description": "Command used to fetch usage summary."
+        },
+        "codexUsage.source": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "command",
+            "sessionLog"
+          ],
+          "description": "Data source mode. auto tries command first, then session log fallback."
+        },
+        "codexUsage.commandTimeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1000,
+          "description": "Timeout for the usage command in milliseconds."
+        },
+        "codexUsage.sessionsRoot": {
+          "type": "string",
+          "default": "~/.codex/sessions",
+          "description": "Root path of Codex session logs used by sessionLog source mode."
+        },
+        "claudeUsage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Claude usage in the status bar."
+        },
+        "claudeUsage.sessionsRoot": {
+          "type": "string",
+          "default": "~/.claude/projects",
+          "description": "Root path of Claude session jsonl files."
+        },
+        "claudeUsage.command": {
+          "type": "string",
+          "default": "",
+          "description": "Optional command to fetch Claude usage (fallback after OAuth)."
+        },
+        "claudeUsage.commandTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "description": "Timeout for Claude usage command."
+        },
+        "copilotUsage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Copilot usage in the status bar."
+        },
+        "copilotUsage.command": {
+          "type": "string",
+          "default": "",
+          "description": "Command used to fetch Copilot usage summary (optional)."
+        },
+        "copilotUsage.commandTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "description": "Timeout for Copilot usage command."
+        },
+        "geminiUsage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Gemini usage in the status bar."
+        },
+        "geminiUsage.showFlashLite": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Gemini Flash Lite status in the Gemini status bar text."
+        },
+        "geminiUsage.showFlash": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Gemini Flash status in the Gemini status bar text."
+        },
+        "geminiUsage.showPro": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Gemini Pro status in the Gemini status bar text."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "echo no-lint",
+    "test": "echo no-test"
+  }
+}
