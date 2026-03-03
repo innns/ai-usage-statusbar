@@ -1,126 +1,77 @@
 ﻿# AI Usage Status Bar
 
-A VS Code extension that shows usage status for `Codex`, `Claude`, `Copilot`, and `Gemini` directly in the status bar, with a sidebar control panel.
+`AI Usage Status Bar` is a VS Code extension that gives you a live, at-a-glance view of usage limits for multiple AI coding assistants in one place.
 
-## Install
+It consolidates quota status for `Codex`, `Claude`, `Copilot`, and `Gemini` into a single workflow: status bar summaries for quick checks and a sidebar panel for deeper visibility and control.
 
-Install from the VS Code Marketplace:
-- https://marketplace.visualstudio.com/items?itemName=duddudcns.codex-usage-statusbar
+## What This Extension Solves
 
-Or in VS Code:
-1. Open Extensions (`Ctrl+Shift+X`)
-2. Search `AI Usage Status Bar`
-3. Click `Install`
+When you use more than one AI assistant, usage and reset information is scattered across different tools and auth flows. This extension centralizes those signals so you can:
 
-## Features
+- quickly see remaining usage without context switching
+- detect low-quota situations before a session is interrupted
+- refresh specific providers on demand
+- control what appears in the status bar
 
-- 4 provider status items in the status bar:
+## Core Capabilities
+
+- Multi-provider usage tracking in the VS Code status bar
   - Codex
   - Claude
   - Copilot
   - Gemini
-- Sidebar panel (`AI Usage`) with:
-  - Full refresh
-  - Per-provider refresh
-  - Provider visibility toggles
+- Sidebar panel (`AI Usage`) for:
+  - full refresh
+  - per-provider refresh
+  - provider visibility toggles
   - Gemini model-group toggles (`Pro`, `Flash`, `Flash Lite`)
-- Fixed auto-refresh every 60 seconds
-- Detailed diagnostics in the `AI Usage` output channel
+- Fixed 60-second auto refresh
+- Detailed diagnostics via the `AI Usage` output channel
+- Language support for the sidebar panel:
+  - `ko`, `en`, `ja`, `zh-cn`, `zh-tw`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `tr`, `pl`, `nl`, `vi`, `id`
 
-## Data Sources
+## Provider Data Flow
 
 ### Codex
 
-- `codexUsage.source=auto`: command first, then session-log fallback
-- `codexUsage.source=command`: command only
-- `codexUsage.source=sessionLog`: newest `*.jsonl` from `codexUsage.sessionsRoot`
+- Source mode options:
+  - `auto` (command first, then session-log fallback)
+  - `command`
+  - `sessionLog`
 
 ### Claude
 
-Priority order:
-1. OAuth usage API (`~/.claude/.credentials.json`)
-2. Optional fallback command (`claudeUsage.command`)
-3. Local session rate-limit files (`claudeUsage.sessionsRoot`)
-
-Notes:
-- Transient OAuth failures can reuse the last successful snapshot.
-- In no-data scenarios, usage may be shown as `Full` by design.
+- Priority:
+  1. OAuth usage API
+  2. optional command fallback
+  3. local session rate-limit fallback
+- Includes resilience for transient OAuth failures and no-data cases.
 
 ### Copilot
 
-Priority order:
-1. GitHub auth session + Copilot API
-2. Optional fallback command (`copilotUsage.command`)
-
-Auth behavior:
-- Silent session lookup first
-- If missing, one sign-in prompt per VS Code session
-- Required scopes: `read:user`, `user:email`
+- Priority:
+  1. GitHub auth session + Copilot API
+  2. optional command fallback
+- Uses a minimal sign-in prompt strategy to avoid repeated interruptions.
 
 ### Gemini
 
-- OAuth creds: `~/.gemini/oauth_creds.json`
-- Token endpoint: `https://oauth2.googleapis.com/token`
-- Usage APIs:
-  - `v1internal:loadCodeAssist`
-  - `v1internal:retrieveUserQuota`
+- Uses OAuth credentials from local Gemini auth data.
+- Handles token refresh and quota retrieval across Code Assist endpoints.
+- Supports model-grouped display (`Pro` / `Flash` / `Flash Lite`) and per-group visibility control.
 
-Refresh client candidate order:
-1. `client_id/client_secret` in creds file
-2. Installed `@google/gemini-cli-core` oauth file
-3. Environment-variable defaults
+## UX and Behavior Notes
 
-Supported environment variables:
-- `GEMINI_CLIENT_ID`
-- `GEMINI_CLIENT_SECRET`
-- `GEMINI_LEGACY_CLIENT_ID`
-- `GEMINI_LEGACY_CLIENT_SECRET`
-
-## Commands
-
-Available in the Command Palette:
-- `Codex Usage: Refresh` (`codexUsage.refresh`)
-- `Codex Usage: Refresh Gemini` (`codexUsage.refreshGemini`)
-- `Codex Usage: Open Output` (`codexUsage.openOutput`)
-
-Status bar items also trigger provider-specific refresh on click.
-
-## Settings
-
-- `aiUsage.language`
-- `codexUsage.enabled`
-- `codexUsage.source` (`auto | command | sessionLog`)
-- `codexUsage.command`
-- `codexUsage.commandTimeoutMs`
-- `codexUsage.sessionsRoot`
-- `claudeUsage.enabled`
-- `claudeUsage.sessionsRoot`
-- `claudeUsage.command`
-- `claudeUsage.commandTimeoutMs`
-- `copilotUsage.enabled`
-- `copilotUsage.command`
-- `copilotUsage.commandTimeoutMs`
-- `geminiUsage.enabled`
-- `geminiUsage.showPro`
-- `geminiUsage.showFlash`
-- `geminiUsage.showFlashLite`
-
-## UI and Behavior
-
-- Status bar text is always in English
-- Sidebar language is controlled by `aiUsage.language`
-- Supported panel languages:
-  - `ko`, `en`, `ja`, `zh-cn`, `zh-tw`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `tr`, `pl`, `nl`, `vi`, `id`
-- Auto-refresh interval is fixed at 60 seconds
-- If VS Code rejects writes for `geminiUsage.*`, extension fallback state is used to keep Gemini toggles applied immediately
+- Status bar text is always rendered in English for consistency.
+- Sidebar language is configurable via `aiUsage.language`.
+- If VS Code rejects writes for some `geminiUsage.*` settings, extension fallback state keeps UI behavior consistent.
 
 ## Security Notes
 
-- Do not hardcode OAuth client IDs/secrets in source code.
-- Use environment variables or local credential files.
-- Before pushing, verify changed files/logs do not include secrets.
+- Do not hardcode secrets (OAuth IDs/secrets, tokens) in source.
+- Use local credential files or environment variables.
+- Validate logs and diffs before pushing.
 
 ## License
 
 [MIT](./LICENSE)
-
