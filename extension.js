@@ -1278,22 +1278,69 @@ async function fetchClaudeUsage(output) {
         output.appendLine('[info:claude] restored last rate limit result from persistent cache');
       }
     }
-    let oauthResult = null;
-    // Skip API call during 429 cooldown period (exponential backoff: 5m→15m→30m)
+
+    const projectsRoot = expandHome(cfg.claudeSessionsRoot);
+    const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
+
+    // ── 1순위: 로컬 JSONL 토큰 카운트 ──────────────────────────────────────
+    // 최근 5시간 내 Claude Code 세션 데이터가 있으면 API 호출 없이 바로 표시
+    const tokenResult = buildClaudeRateLimitsFromLocalTokenCount(projectsRoot, credPath, output);
+    if (tokenResult) {
+      output.appendLine(`[info:claude] local token count: ${tokenResult.usedTokens}/${tokenResult.planLimit} tokens`);
+      lastClaudeRateLimitResult = tokenResult.result;
+      extensionState?.update('claude.lastRateLimitResult', tokenResult.result);
+      return tokenResult.result;
+    }
+
+    // ── 2순위: 로컬 JSONL rate_limits 필드 (Claude Code가 기록하는 경우) ───
+    if (cfg.claudeCommand && cfg.claudeCommand.trim()) {
+      const cmdResult = await fetchSimpleCommandUsage(
+        'claudeUsage.command',
+        'claudeUsage.commandTimeoutMs',
+        output,
+        'claude'
+      );
+      if (cmdResult.ok) {
+        return cmdResult;
+      }
+      output.appendLine(`[info:claude] command failed: ${cmdResult.error}`);
+    }
+
+    const sessionHit = findNewestClaudeSessionWithRateLimits(projectsRoot, 20);
+    if (sessionHit) {
+      output.appendLine(`[run:claude-session] ${sessionHit.filePath}`);
+      const summary = formatRateLimitSingleWindowSummary(sessionHit.rateLimits);
+      const raw = `Claude H/W left\n${formatRateLimitRaw(sessionHit.rateLimits)}`;
+      const result = {
+        ok: true,
+        summary,
+        raw,
+        sourceLabel: 'Source: local session rate limits',
+        rateLimits: sessionHit.rateLimits,
+        groups: [{ label: 'Claude', rateLimits: sessionHit.rateLimits }],
+      };
+      lastClaudeRateLimitResult = result;
+      extensionState?.update('claude.lastRateLimitResult', result);
+      return result;
+    }
+
+    // ── 3순위: OAuth API (로컬에 데이터 없을 때만 호출) ─────────────────────
     const MAX_COOLDOWN_MS = 30 * 60 * 1000;
 
-    // Rate-limit ourselves: don't call the API more than once per 5 minutes
+    // 5분 이내 성공 캐시가 있으면 API 재호출 스킵
     if (lastClaudeOauthSuccessAt && Date.now() - lastClaudeOauthSuccessAt < CLAUDE_OAUTH_MIN_INTERVAL_MS) {
       if (lastClaudeRateLimitResult?.ok) {
         const ageSec = Math.round((Date.now() - lastClaudeOauthSuccessAt) / 1000);
-        output.appendLine(`[info:claude] using cached result (${ageSec}s old, next API call in ${Math.ceil((CLAUDE_OAUTH_MIN_INTERVAL_MS - (Date.now() - lastClaudeOauthSuccessAt)) / 1000)}s)`);
+        output.appendLine(`[info:claude] using cached API result (${ageSec}s old)`);
         return { ...lastClaudeRateLimitResult, sourceLabel: `${lastClaudeRateLimitResult.sourceLabel} (cached)` };
       }
     }
 
+    // 429 쿨다운 중이면 API 스킵
+    let oauthResult = null;
     if (lastClaudeOauth429At && Date.now() - lastClaudeOauth429At < lastClaudeOauth429RetryAfterMs) {
       const remainSec = Math.ceil((lastClaudeOauth429RetryAfterMs - (Date.now() - lastClaudeOauth429At)) / 1000);
-      output.appendLine(`[info:claude] oauth 429 cooldown active, skipping API call (${remainSec}s remaining, cooldown=${Math.round(lastClaudeOauth429RetryAfterMs/60000)}min)`);
+      output.appendLine(`[info:claude] oauth 429 cooldown active (${remainSec}s remaining, cooldown=${Math.round(lastClaudeOauth429RetryAfterMs/60000)}min)`);
       oauthResult = { ok: false, error: 'HTTP 429: rate limit cooldown active' };
     } else {
       for (let attempt = 1; attempt <= PROVIDER_MAX_RETRY_ATTEMPTS; attempt += 1) {
@@ -1301,21 +1348,18 @@ async function fetchClaudeUsage(output) {
         if (oauthResult.ok) {
           lastClaudeRateLimitResult = oauthResult;
           lastClaudeOauth429At = 0;
-          lastClaudeOauth429RetryAfterMs = 5 * 60 * 1000; // reset backoff on success
+          lastClaudeOauth429RetryAfterMs = 5 * 60 * 1000;
           lastClaudeOauthSuccessAt = Date.now();
           extensionState?.update('claude.lastRateLimitResult', oauthResult);
           return oauthResult;
         }
         output.appendLine(`[info:claude] oauth failed (attempt ${attempt}/${PROVIDER_MAX_RETRY_ATTEMPTS}): ${oauthResult.error}`);
-        // 429: don't retry (cooldown applied below), break immediately
         if (isClaudeRateLimitError(oauthResult.error)) {
-          // Parse Retry-After from error message if embedded, else use exponential backoff
           const retryAfterMatch = oauthResult.error.match(/retry.after[:\s]+([\d]+)/i);
           const retryAfterSec = retryAfterMatch ? parseInt(retryAfterMatch[1], 10) : null;
           if (retryAfterSec && retryAfterSec > 0) {
             lastClaudeOauth429RetryAfterMs = retryAfterSec * 1000;
           } else {
-            // exponential backoff: double each time, max 30 min
             lastClaudeOauth429RetryAfterMs = Math.min(lastClaudeOauth429RetryAfterMs * 2, MAX_COOLDOWN_MS);
           }
           lastClaudeOauth429At = Date.now();
@@ -1330,69 +1374,28 @@ async function fetchClaudeUsage(output) {
       }
     }
 
-    if ((isClaudeTransientError(oauthResult.error) || isClaudeRateLimitError(oauthResult.error)) && lastClaudeRateLimitResult?.ok) {
-      const reason = isClaudeRateLimitError(oauthResult.error) ? 'oauth 429 rate limited' : 'oauth transient error';
-      output.appendLine(`[info:claude] ${reason}, using last known rate limits`);
-      return {
-        ...lastClaudeRateLimitResult,
-        sourceLabel: `${lastClaudeRateLimitResult.sourceLabel} (cached)`,
-      };
+    // API 실패 시 캐시 반환
+    if ((isClaudeTransientError(oauthResult?.error) || isClaudeRateLimitError(oauthResult?.error)) && lastClaudeRateLimitResult?.ok) {
+      const reason = isClaudeRateLimitError(oauthResult.error) ? 'oauth 429' : 'oauth error';
+      output.appendLine(`[info:claude] ${reason}, using cached result`);
+      return { ...lastClaudeRateLimitResult, sourceLabel: `${lastClaudeRateLimitResult.sourceLabel} (cached)` };
     }
 
-    if (cfg.claudeCommand && cfg.claudeCommand.trim()) {
-      const cmdResult = await fetchSimpleCommandUsage(
-        'claudeUsage.command',
-        'claudeUsage.commandTimeoutMs',
-        output,
-        'claude'
-      );
-      if (cmdResult.ok) {
-        return cmdResult;
-      }
-      output.appendLine(`[info:claude] command failed, fallback to local session: ${cmdResult.error}`);
+    // API 완전 실패 + 캐시 없음
+    if (isClaudeRateLimitError(oauthResult?.error)) {
+      const remainSec = lastClaudeOauth429At
+        ? Math.max(0, Math.ceil((lastClaudeOauth429RetryAfterMs - (Date.now() - lastClaudeOauth429At)) / 1000))
+        : 0;
+      output.appendLine(`[info:claude] rate limited, no local data or cache (cooldown ${remainSec}s remaining)`);
+      return { ok: false, error: `Rate limited by Claude API (retry in ${remainSec}s)` };
     }
 
-    const projectsRoot = expandHome(cfg.claudeSessionsRoot);
-    const sessionHit = findNewestClaudeSessionWithRateLimits(projectsRoot, 20);
-    if (!sessionHit) {
-      // 429 active: try local JSONL token counting before giving up
-      if (isClaudeRateLimitError(oauthResult?.error)) {
-        const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
-        const tokenResult = buildClaudeRateLimitsFromLocalTokenCount(projectsRoot, credPath, output);
-        if (tokenResult) {
-          output.appendLine(`[info:claude] 429 fallback: using local JSONL token count (${tokenResult.usedTokens}/${tokenResult.planLimit} tokens)`);
-          lastClaudeRateLimitResult = tokenResult.result;
-          extensionState?.update('claude.lastRateLimitResult', tokenResult.result);
-          return tokenResult.result;
-        }
-        const remainSec = lastClaudeOauth429At
-          ? Math.max(0, Math.ceil((lastClaudeOauth429RetryAfterMs - (Date.now() - lastClaudeOauth429At)) / 1000))
-          : 0;
-        const cooldownMin = Math.round(lastClaudeOauth429RetryAfterMs / 60000);
-        output.appendLine(`[info:claude] rate limited, no cached data available (cooldown ${remainSec}s remaining, next retry in ${cooldownMin}min)`);
-        return { ok: false, error: `Rate limited by Claude API (retry in ${remainSec}s)` };
-      }
-      if (shouldAssumeClaudeFullFromNoData(oauthResult?.error, projectsRoot)) {
-        output.appendLine('[info:claude] no session rate-limit data, assuming full quota');
-        return buildClaudeAssumedFullResult('local session rate limits unavailable');
-      }
-      return { ok: false, error: `No Claude session file in ${projectsRoot}` };
+    if (shouldAssumeClaudeFullFromNoData(oauthResult?.error, projectsRoot)) {
+      output.appendLine('[info:claude] no session data anywhere, assuming full quota');
+      return buildClaudeAssumedFullResult('no data available');
     }
 
-    output.appendLine(`[run:claude-session] ${sessionHit.filePath}`);
-    const summary = formatRateLimitSingleWindowSummary(sessionHit.rateLimits);
-    const raw = `Claude H/W left\n${formatRateLimitRaw(sessionHit.rateLimits)}`;
-    const result = {
-      ok: true,
-      summary,
-      raw,
-      sourceLabel: 'Source: local session rate limits',
-      rateLimits: sessionHit.rateLimits,
-      groups: [{ label: 'Claude', rateLimits: sessionHit.rateLimits }],
-    };
-    lastClaudeRateLimitResult = result;
-    extensionState?.update('claude.lastRateLimitResult', result);
-    return result;
+    return { ok: false, error: oauthResult?.error || 'No Claude data available' };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
