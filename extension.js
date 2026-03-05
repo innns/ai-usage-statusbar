@@ -1265,6 +1265,14 @@ async function fetchUsage(output) {
 async function fetchClaudeUsage(output) {
   try {
     const cfg = getConfig();
+    // Restore persisted cache on first run (survives VS Code restarts)
+    if (!lastClaudeRateLimitResult && extensionState) {
+      const persisted = extensionState.get('claude.lastRateLimitResult');
+      if (persisted?.ok) {
+        lastClaudeRateLimitResult = persisted;
+        output.appendLine('[info:claude] restored last rate limit result from persistent cache');
+      }
+    }
     let oauthResult = null;
     // Skip API call during 429 cooldown period (5 minutes)
     const OAUTH_429_COOLDOWN_MS = 5 * 60 * 1000;
@@ -1278,6 +1286,7 @@ async function fetchClaudeUsage(output) {
         if (oauthResult.ok) {
           lastClaudeRateLimitResult = oauthResult;
           lastClaudeOauth429At = 0;
+          extensionState?.update('claude.lastRateLimitResult', oauthResult);
           return oauthResult;
         }
         output.appendLine(`[info:claude] oauth failed (attempt ${attempt}/${PROVIDER_MAX_RETRY_ATTEMPTS}): ${oauthResult.error}`);
@@ -1338,6 +1347,7 @@ async function fetchClaudeUsage(output) {
       groups: [{ label: 'Claude', rateLimits: sessionHit.rateLimits }],
     };
     lastClaudeRateLimitResult = result;
+    extensionState?.update('claude.lastRateLimitResult', result);
     return result;
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
