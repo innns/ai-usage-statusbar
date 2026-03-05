@@ -2,7 +2,7 @@
   "name": "codex-usage-statusbar",
   "displayName": "AI Usage Status Bar",
   "description": "Show Codex, Claude, Copilot, and Gemini usage in the status bar with a sidebar control panel.",
-  "version": "0.0.46",
+  "version": "0.0.47",
   "publisher": "duddudcns",
   "icon": "ai_usage_statusbar.png",
   "engines": {
@@ -30,7 +30,7 @@
         {
           "type": "webview",
           "id": "aiUsage.settingsPanel",
-          "name": "Settings v0.0.46"
+          "name": "Settings v0.0.47"
         }
       ]
     },
