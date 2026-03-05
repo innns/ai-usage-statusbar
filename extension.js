@@ -29,6 +29,7 @@ const SUPPORTED_LANGUAGES = new Set([
 ]);
 let copilotAuthPromptAttempted = false;
 let lastClaudeRateLimitResult = null;
+let lastClaudeOauth429At = 0;
 let extensionState = null;
 
 function activate(context) {
@@ -1249,7 +1250,7 @@ async function fetchUsage(output) {
     return commandResult;
   }
 
-  output.appendLine('[info] command source failed, trying session log fallback');
+  output.appendLine(`[info] command source failed (${commandResult.error}), trying session log fallback`);
   const sessionResult = await fetchUsageFromSessionLog(cfg, output);
   if (sessionResult.ok) {
     return sessionResult;
@@ -1265,21 +1266,37 @@ async function fetchClaudeUsage(output) {
   try {
     const cfg = getConfig();
     let oauthResult = null;
-    for (let attempt = 1; attempt <= PROVIDER_MAX_RETRY_ATTEMPTS; attempt += 1) {
-      oauthResult = await fetchClaudeUsageFromOauth(output);
-      if (oauthResult.ok) {
-        lastClaudeRateLimitResult = oauthResult;
-        return oauthResult;
+    // Skip API call during 429 cooldown period (5 minutes)
+    const OAUTH_429_COOLDOWN_MS = 5 * 60 * 1000;
+    if (lastClaudeOauth429At && Date.now() - lastClaudeOauth429At < OAUTH_429_COOLDOWN_MS) {
+      const remainSec = Math.ceil((OAUTH_429_COOLDOWN_MS - (Date.now() - lastClaudeOauth429At)) / 1000);
+      output.appendLine(`[info:claude] oauth 429 cooldown active, skipping API call (${remainSec}s remaining)`);
+      oauthResult = { ok: false, error: 'HTTP 429: rate limit cooldown active' };
+    } else {
+      for (let attempt = 1; attempt <= PROVIDER_MAX_RETRY_ATTEMPTS; attempt += 1) {
+        oauthResult = await fetchClaudeUsageFromOauth(output);
+        if (oauthResult.ok) {
+          lastClaudeRateLimitResult = oauthResult;
+          lastClaudeOauth429At = 0;
+          return oauthResult;
+        }
+        output.appendLine(`[info:claude] oauth failed (attempt ${attempt}/${PROVIDER_MAX_RETRY_ATTEMPTS}): ${oauthResult.error}`);
+        // 429: don't retry (cooldown applied below), break immediately
+        if (isClaudeRateLimitError(oauthResult.error)) {
+          lastClaudeOauth429At = Date.now();
+          output.appendLine('[info:claude] oauth 429 received, entering 5-min cooldown');
+          break;
+        }
+        if (!isClaudeTransientError(oauthResult.error) || attempt >= PROVIDER_MAX_RETRY_ATTEMPTS) {
+          break;
+        }
+        await sleep(RETRY_DELAY_MS * attempt);
       }
-      output.appendLine(`[info:claude] oauth failed (attempt ${attempt}/${PROVIDER_MAX_RETRY_ATTEMPTS}): ${oauthResult.error}`);
-      if (!isClaudeTransientError(oauthResult.error) || attempt >= PROVIDER_MAX_RETRY_ATTEMPTS) {
-        break;
-      }
-      await sleep(RETRY_DELAY_MS * attempt);
     }
 
-    if (isClaudeTransientError(oauthResult.error) && lastClaudeRateLimitResult?.ok) {
-      output.appendLine('[info:claude] oauth transient error, using last known rate limits');
+    if ((isClaudeTransientError(oauthResult.error) || isClaudeRateLimitError(oauthResult.error)) && lastClaudeRateLimitResult?.ok) {
+      const reason = isClaudeRateLimitError(oauthResult.error) ? 'oauth 429 rate limited' : 'oauth transient error';
+      output.appendLine(`[info:claude] ${reason}, using last known rate limits`);
       return {
         ...lastClaudeRateLimitResult,
         sourceLabel: `${lastClaudeRateLimitResult.sourceLabel} (cached)`,
@@ -2194,13 +2211,15 @@ function formatRateLimitSingleWindowSummary(rateLimits, language) {
   const hasPrimaryWindow = !!rateLimits?.primary;
   const hasSecondaryWindow = !!rateLimits?.secondary;
 
-  const hasHourlyLeft = primaryLeftPct !== null && primaryLeftPct > 0;
+  const hasPrimaryData = primaryLeftPct !== null;
+  // W is only shown alongside H when weekly usage is critically low (< 5%)
   const showWeeklyAlongsideHourly = (
-    hasHourlyLeft &&
+    hasPrimaryData &&
     secondaryLeftPct !== null &&
     secondaryLeftPct < WEEKLY_LOW_PERCENT_THRESHOLD
   );
-  if (hasHourlyLeft) {
+  // Always show H when we have primary data — including H=0% (show reset countdown)
+  if (hasPrimaryData) {
     if (showWeeklyAlongsideHourly) {
       return `H${primaryLeftPct}% ${primaryLeft} W${secondaryLeftPct}% ${secondaryLeft}`;
     }
@@ -2209,9 +2228,6 @@ function formatRateLimitSingleWindowSummary(rateLimits, language) {
 
   if (secondaryLeftPct !== null) {
     return `W${secondaryLeftPct}% ${secondaryLeft}`;
-  }
-  if (primaryLeftPct !== null) {
-    return `H${primaryLeftPct}% ${primaryLeft}`;
   }
   if (hasPrimaryWindow) {
     return `HFull ${primaryLeft}`;
@@ -2320,6 +2336,11 @@ function shouldAssumeClaudeFullFromNoData(oauthError, projectsRoot) {
   }
   // Hard failures (installation/auth missing) should remain unavailable.
   return false;
+}
+
+function isClaudeRateLimitError(err) {
+  const msg = String(err || '').toLowerCase();
+  return msg.includes('http 429') || msg.includes('rate_limit_error') || msg.includes('rate limit cooldown');
 }
 
 function isClaudeTransientError(err) {
