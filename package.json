@@ -30,7 +30,7 @@
         {
           "type": "webview",
           "id": "aiUsage.settingsPanel",
-          "name": "Settings v0.0.45"
+          "name": "Settings v0.0.46"
         }
       ]
     },
