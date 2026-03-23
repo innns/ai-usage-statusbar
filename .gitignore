@@ -15,9 +15,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Docs (keep only README)
-*.md
-!README.md
+# Docs
+CAUTIONS.md
 
 # OS files
 .DS_Store
